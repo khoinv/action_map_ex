@@ -1,4 +1,4 @@
-defmodule ActionMap.MixProject do
+defmodule ActionMap.Umbrella.MixProject do
   use Mix.Project
 
   def project do
@@ -16,6 +16,8 @@ defmodule ActionMap.MixProject do
   #
   # Run "mix help deps" for examples and options.
   defp deps do
-    []
+    [
+      {:credo, "~> 1.2", only: [:dev, :test], runtime: false}
+    ]
   end
 end

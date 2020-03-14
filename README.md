@@ -1,5 +1,7 @@
-# ActionMap
+### ActionMap
+Learning Elixir by implementing action_map server
 
-**TODO: Add description**
-
-# action_map_ex
+# Requirement
+- elixir 1.9
+# Run
+`mix test`
