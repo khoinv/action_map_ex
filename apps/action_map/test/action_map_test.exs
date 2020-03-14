@@ -11,6 +11,18 @@ defmodule ActionMapTest do
     FileStorage.get(f, "like")
 
     {:ok, pid} = ActionMap.start(make_ref(), @test_key)
+
+    on_exit(
+      pid,
+      fn ->
+        {:ok, f} = FileStorage.start_link(%{})
+        FileStorage.delete(f, @test_key)
+        FileStorage.get(f, @test_key)
+        # ensure delete is actually called
+        :ok
+      end
+    )
+
     %{pid: pid}
   end
 

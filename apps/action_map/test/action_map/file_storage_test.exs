@@ -24,6 +24,9 @@ defmodule ActionMap.FileStorageTest do
       FileStorage.store(pid, "example", example_map)
 
       assert example_map = FileStorage.get(pid, "example")
+      FileStorage.delete(pid, "example")
+      # ensure delete is actually called
+      FileStorage.get(pid, "example")
     end
   end
 end

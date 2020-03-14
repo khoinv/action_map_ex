@@ -40,6 +40,15 @@ defmodule ActionMap.FileStorage do
     {:noreply, state}
   end
 
+  @impl true
+  def handle_cast({:delete, key}, state) do
+    key
+    |> get_file_name()
+    |> File.rm!()
+
+    {:noreply, state}
+  end
+
   defp get_file_name(key) do
     Path.join(@store_folder, to_string(key))
   end
@@ -51,5 +60,9 @@ defmodule ActionMap.FileStorage do
 
   def store(pid, key, data) do
     GenServer.cast(pid, {:store, key, data})
+  end
+
+  def delete(pid, key) do
+    GenServer.cast(pid, {:delete, key})
   end
 end
