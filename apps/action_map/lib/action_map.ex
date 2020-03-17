@@ -13,7 +13,7 @@ defmodule ActionMap do
   @impl true
   def init(opts) do
     send(self(), :real_init)
-    {:ok, %{map_key: opts[:map_key], action_map: %{}}}
+    {:ok, %__MODULE__{map_key: opts[:map_key]}}
   end
 
   @impl true
