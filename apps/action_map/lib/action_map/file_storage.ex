@@ -1,6 +1,7 @@
 defmodule ActionMap.FileStorage do
   @moduledoc false
-  @store_folder './action_map_store_folder'
+  @store_folder './priv/store_folder'
+  @timeout 60_000
 
   use GenServer
 
@@ -54,15 +55,38 @@ defmodule ActionMap.FileStorage do
   end
 
   ## Api
-  def get(pid, key) do
-    GenServer.call(pid, {:get, key})
+  def get(key) do
+    with_pool(fn worker -> GenServer.call(worker, {:get, key}) end)
   end
 
-  def store(pid, key, data) do
-    GenServer.cast(pid, {:store, key, data})
+  def store(key, data) do
+    with_pool(fn worker -> GenServer.cast(worker, {:store, key, data}) end)
   end
 
-  def delete(pid, key) do
-    GenServer.cast(pid, {:delete, key})
+  def store_all_nodes(key, data) do
+    {_results, bad_nodes} =
+      :rpc.multicall(
+        __MODULE__,
+        :store,
+        [key, data],
+        @timeout
+      )
+
+    0 = Enum.count(bad_nodes)
+  end
+
+  def delete(key) do
+    with_pool(fn worker -> GenServer.cast(worker, {:delete, key}) end)
+  end
+
+  defp with_pool(callback) do
+    Task.async(fn ->
+      :poolboy.transaction(
+        ActionMap.FileStorage.Pool,
+        fn worker -> apply(callback, [worker]) end,
+        @timeout
+      )
+    end)
+    |> Task.await(@timeout)
   end
 end

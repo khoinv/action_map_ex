@@ -2,44 +2,27 @@ defmodule ActionMap do
   @moduledoc false
 
   use GenServer
-  @timeout 60_000
 
-  defstruct map_key: nil, action_map: %{}
+  defstruct file_name: nil, action_map: %{}
 
   def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: {:global, opts[:name]})
+    GenServer.start_link(__MODULE__, opts, name: {:global, {__MODULE__, opts[:name]}})
   end
 
   @impl true
   def init(opts) do
     send(self(), :real_init)
-    {:ok, %__MODULE__{map_key: opts[:map_key]}}
+    {:ok, %__MODULE__{file_name: opts[:file_name]}}
   end
 
   @impl true
-  def handle_info(:real_init, %{map_key: map_key} = state) do
-    action_map =
-      Task.async(fn ->
-        :poolboy.transaction(
-          ActionMap.FileStorage.Pool,
-          fn worker -> ActionMap.FileStorage.get(worker, map_key) end,
-          @timeout
-        )
-      end)
-      |> Task.await(@timeout)
-
-    {:noreply, %{state | action_map: action_map}}
+  def handle_info(:real_init, %{file_name: file_name} = state) do
+    {:noreply, %{state | action_map: ActionMap.FileStorage.get(file_name)}}
   end
 
-  def handle_info(:store, %{map_key: map_key, action_map: action_map} = state) do
-    Task.async(fn ->
-      :poolboy.transaction(
-        ActionMap.FileStorage.Pool,
-        fn worker -> ActionMap.FileStorage.store(worker, map_key, action_map) end,
-        @timeout
-      )
-    end)
-    |> Task.await(@timeout)
+  def handle_info(:store, %{file_name: file_name, action_map: action_map} = state) do
+    #    ActionMap.FileStorage.store(file_name, action_map)
+    ActionMap.FileStorage.store_all_nodes(file_name, action_map)
 
     {:noreply, state}
   end
@@ -71,11 +54,28 @@ defmodule ActionMap do
   end
 
   # Api
-  def start(name, map_key) do
-    DynamicSupervisor.start_child(
-      ActionMap.Supervisor,
-      {__MODULE__, [map_key: map_key, name: name]}
-    )
+
+  ### NOTE :global module performs a synchronized chat across the entire cluster
+  defp new_process(name) do
+    case DynamicSupervisor.start_child(
+           ActionMap.Supervisor,
+           {__MODULE__, [file_name: name, name: name]}
+         ) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, pid}} -> {:ok, pid}
+    end
+  end
+
+  @doc """
+    NOTE: :global.whereis_name/1 doesn't lead to any cross-node chatting.
+    This function only makes a single lookup to a local ETS table.
+    All global processes are cached locally to speed up lookup purpose.
+  """
+  def server_process(name) do
+    case :global.whereis_name({__MODULE__, name}) do
+      :undefined -> new_process(name)
+      pid -> {:ok, pid}
+    end
   end
 
   def action(pid, key) do
