@@ -9,7 +9,7 @@ defmodule ActionMap.FileStorageTest do
 
   describe "get/1" do
     test "returns empty map for non_exist_key" do
-      assert %{} = FileStorage.get("non_exist_key")
+      assert {:error, :enoent} = FileStorage.get("non_exist_key")
     end
   end
 
@@ -18,10 +18,10 @@ defmodule ActionMap.FileStorageTest do
       example_map = %{"a" => 1, "b" => 2}
       FileStorage.store("example", example_map)
 
-      assert example_map = FileStorage.get("example")
+      assert {:ok, ^example_map} = FileStorage.get("example")
       FileStorage.delete("example")
       # ensure delete is actually called
-      FileStorage.get("example")
+      {:error, :enoent} = FileStorage.get("example")
     end
   end
 end

@@ -1,13 +1,15 @@
 defmodule ActionMapTest do
   use ExUnit.Case, async: true
   alias ActionMap.FileStorage
+
+  @moduletag :capture_log
   doctest ActionMap
 
   @file_name "test"
   setup do
     FileStorage.store(@file_name, %{"like" => "👍"})
     # ensure store is actually called
-    FileStorage.get(@file_name)
+    {:ok, _} = FileStorage.get(@file_name)
 
     {:ok, pid} = ActionMap.server_process(@file_name)
 
@@ -15,7 +17,7 @@ defmodule ActionMapTest do
       pid,
       fn ->
         FileStorage.delete(@file_name)
-        FileStorage.get(@file_name)
+        {:error, :enoent} = FileStorage.get(@file_name)
         # ensure delete is actually called
         :ok
       end
@@ -72,25 +74,34 @@ defmodule ActionMapTest do
     end
   end
 
-  describe "replication all nodes" do
-    test "data could be duplicated in all nodes", %{pid: pid} do
+  describe "replication" do
+    test "files are replicated only in replicas nodes", %{pid: _pid} do
+      test_file_name = "replication"
+      {:ok, pid} = ActionMap.server_process(test_file_name)
+      LocalCluster.start_nodes("test-cluster", 5, files: [__ENV__.file])
+
       ActionMap.add_action(pid, "like2", "🤞")
-      {:ok, "🤞"} = ActionMap.action(pid, "like2")
-      Process.exit(pid, :kill)
 
-      [node1] = LocalCluster.start_nodes("test-cluster", 1, files: [__ENV__.file])
-
-      caller = self()
-
-      Node.spawn(
-        node1,
-        fn ->
-          {:ok, pid} = ActionMap.server_process(@file_name)
-          send(caller, ActionMap.action(pid, "like2"))
-        end
+      assert_node_files(
+        [Node.self() | ActionMap.Replication.replicas_nodes()],
+        test_file_name,
+        {:ok, %{"like2" => "🤞"}}
       )
 
-      assert_receive {:ok, "🤞"}
+      assert_node_files(
+        Node.list() -- ActionMap.Replication.replicas_nodes(),
+        test_file_name,
+        {:error, :enoent}
+      )
     end
+  end
+
+  defp assert_node_files(nodes, file_name, node_expect) do
+    nodes_expect =
+      for _node <- nodes do
+        node_expect
+      end
+
+    assert {^nodes_expect, []} = :rpc.multicall(nodes, FileStorage, :get, [file_name], 1000)
   end
 end

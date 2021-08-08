@@ -17,7 +17,7 @@ defmodule ActionMap.FileStorage do
 
   @impl true
   def handle_info(:real_init, state) do
-    File.mkdir_p!(@store_folder)
+    File.mkdir_p!(store_folder())
     {:noreply, state}
   end
 
@@ -25,33 +25,37 @@ defmodule ActionMap.FileStorage do
   def handle_call({:get, key}, _from, state) do
     data =
       case File.read(get_file_name(key)) do
-        {:ok, contents} -> :erlang.binary_to_term(contents)
-        _ -> %{}
+        {:ok, contents} -> {:ok, :erlang.binary_to_term(contents)}
+        error -> error
       end
 
     {:reply, data, state}
   end
 
   @impl true
-  def handle_cast({:store, key, data}, state) do
+  def handle_call({:store, key, data}, _from, state) do
     key
     |> get_file_name()
     |> File.write!(:erlang.term_to_binary(data))
 
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
   @impl true
-  def handle_cast({:delete, key}, state) do
+  def handle_call({:delete, key}, _from, state) do
     key
     |> get_file_name()
     |> File.rm!()
 
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
   defp get_file_name(key) do
-    Path.join(@store_folder, to_string(key))
+    Path.join(store_folder(), to_string(key))
+  end
+
+  defp store_folder() do
+    Path.join(@store_folder, Atom.to_string(Node.self()))
   end
 
   ## Api
@@ -60,12 +64,13 @@ defmodule ActionMap.FileStorage do
   end
 
   def store(key, data) do
-    with_pool(fn worker -> GenServer.cast(worker, {:store, key, data}) end)
+    with_pool(fn worker -> GenServer.call(worker, {:store, key, data}) end)
   end
 
-  def store_all_nodes(key, data) do
+  def store_nodes(nodes, key, data) do
     {_results, bad_nodes} =
       :rpc.multicall(
+        nodes,
         __MODULE__,
         :store,
         [key, data],
@@ -76,7 +81,7 @@ defmodule ActionMap.FileStorage do
   end
 
   def delete(key) do
-    with_pool(fn worker -> GenServer.cast(worker, {:delete, key}) end)
+    with_pool(fn worker -> GenServer.call(worker, {:delete, key}) end)
   end
 
   defp with_pool(callback) do

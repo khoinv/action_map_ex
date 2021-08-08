@@ -4,10 +4,9 @@ Learning the distributed system by implementing action_map server
 ### TODO LIST
 + [ ] Data compression
 + [ ] Store only frequently used data in memory, and the rest on disk
-+ [x] Simple data partition
-+ [x] Data replication all nodes
-+ [ ] Data partition
-+ [ ] Data replication
++ [x] Data partition
++ [x] Data replication
++ [ ] Enhance data partition and replication using consistent hashing
 + [ ] Consistency
 + [ ] Inconsistency resolution
 + [ ] Handling failures
