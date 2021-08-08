@@ -17,14 +17,13 @@ defmodule ActionMap do
 
   @impl true
   def handle_info(:real_init, %{file_name: file_name} = state) do
-    {:noreply, %{state | action_map: ActionMap.FileStorage.get(file_name)}}
-  end
+    content =
+      case ActionMap.FileStorage.get(file_name) do
+        {:ok, contents} -> contents
+        {:error, :enoent} -> %{}
+      end
 
-  def handle_info(:store, %{file_name: file_name, action_map: action_map} = state) do
-    #    ActionMap.FileStorage.store(file_name, action_map)
-    ActionMap.FileStorage.store_all_nodes(file_name, action_map)
-
-    {:noreply, state}
+    {:noreply, %{state | action_map: content}}
   end
 
   @impl true
@@ -33,27 +32,36 @@ defmodule ActionMap do
   end
 
   @impl true
-  def handle_cast({:add_action, key, value}, %{action_map: action_map} = state) do
-    action_map = Map.put(action_map, key, value)
-    send(self(), :store)
-    {:noreply, %{state | action_map: action_map}}
+  def handle_call({:add_action, key, value}, _from, state) do
+    state = %{state | action_map: Map.put(state.action_map, key, value)}
+    store(state)
+    {:reply, :ok, state}
   end
 
   @impl true
-  def handle_cast({:update_action, key, value}, %{action_map: action_map} = state) do
-    action_map = Map.put(action_map, key, value)
-    send(self(), :store)
-    {:noreply, %{state | action_map: action_map}}
+  def handle_call({:update_action, key, value}, _from, state) do
+    state = %{state | action_map: Map.put(state.action_map, key, value)}
+    store(state)
+    {:reply, :ok, state}
   end
 
   @impl true
-  def handle_cast({:delete_action, key}, %{action_map: action_map} = state) do
-    action_map = Map.delete(action_map, key)
-    send(self(), :store)
-    {:noreply, %{state | action_map: action_map}}
+  def handle_call({:delete_action, key}, _from, state) do
+    state = %{state | action_map: Map.delete(state.action_map, key)}
+    store(state)
+    {:reply, :ok, state}
   end
 
   # Api
+
+  defp store(%{file_name: file_name, action_map: action_map}) do
+    #    ActionMap.FileStorage.store(file_name, action_map)
+    ActionMap.FileStorage.store_nodes(
+      [Node.self() | ActionMap.Replication.replicas_nodes()],
+      file_name,
+      action_map
+    )
+  end
 
   ### NOTE :global module performs a synchronized chat across the entire cluster
   defp new_process(name) do
@@ -83,14 +91,14 @@ defmodule ActionMap do
   end
 
   def add_action(pid, key, value) do
-    GenServer.cast(pid, {:add_action, key, value})
+    GenServer.call(pid, {:add_action, key, value})
   end
 
   def delete_action(pid, key) do
-    GenServer.cast(pid, {:delete_action, key})
+    GenServer.call(pid, {:delete_action, key})
   end
 
   def update_action(pid, key, new_value) do
-    GenServer.cast(pid, {:update_action, key, new_value})
+    GenServer.call(pid, {:update_action, key, new_value})
   end
 end

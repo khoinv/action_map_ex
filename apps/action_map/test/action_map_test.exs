@@ -1,13 +1,15 @@
 defmodule ActionMapTest do
   use ExUnit.Case, async: true
   alias ActionMap.FileStorage
+
+  @moduletag :capture_log
   doctest ActionMap
 
   @file_name "test"
   setup do
     FileStorage.store(@file_name, %{"like" => "👍"})
     # ensure store is actually called
-    FileStorage.get(@file_name)
+    {:ok, _} = FileStorage.get(@file_name)
 
     {:ok, pid} = ActionMap.server_process(@file_name)
 
@@ -15,7 +17,7 @@ defmodule ActionMapTest do
       pid,
       fn ->
         FileStorage.delete(@file_name)
-        FileStorage.get(@file_name)
+        {:error, :enoent} = FileStorage.get(@file_name)
         # ensure delete is actually called
         :ok
       end
@@ -59,7 +61,7 @@ defmodule ActionMapTest do
   describe "partition" do
     test "get the key from other nodes correctly", %{pid: _pid} do
       {:ok, pid} = ActionMap.server_process(@file_name)
-      [node1] = LocalCluster.start_nodes("test-cluster", 1, files: [__ENV__.file])
+      [node1] = LocalCluster.start_nodes("test-partition", 1, files: [__ENV__.file])
 
       caller = self()
 
@@ -69,28 +71,6 @@ defmodule ActionMapTest do
       )
 
       assert_receive {:ok, "👍"}
-    end
-  end
-
-  describe "replication all nodes" do
-    test "data could be duplicated in all nodes", %{pid: pid} do
-      ActionMap.add_action(pid, "like2", "🤞")
-      {:ok, "🤞"} = ActionMap.action(pid, "like2")
-      Process.exit(pid, :kill)
-
-      [node1] = LocalCluster.start_nodes("test-cluster", 1, files: [__ENV__.file])
-
-      caller = self()
-
-      Node.spawn(
-        node1,
-        fn ->
-          {:ok, pid} = ActionMap.server_process(@file_name)
-          send(caller, ActionMap.action(pid, "like2"))
-        end
-      )
-
-      assert_receive {:ok, "🤞"}
     end
   end
 end
