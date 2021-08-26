@@ -71,19 +71,6 @@ defmodule ActionMap.FileStorage do
     with_pool(fn worker -> GenServer.call(worker, {:store, key, data}) end)
   end
 
-  def store_nodes(nodes, key, data) do
-    {_results, bad_nodes} =
-      :rpc.multicall(
-        nodes,
-        __MODULE__,
-        :store,
-        [key, data],
-        @timeout
-      )
-
-    0 = Enum.count(bad_nodes)
-  end
-
   def delete(key) do
     with_pool(fn worker -> GenServer.call(worker, {:delete, key}) end)
   end

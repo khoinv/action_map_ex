@@ -17,6 +17,8 @@ defmodule ActionMap.Application do
   def start(_type, _args) do
     children = [
       :poolboy.child_spec(:woker, file_store_pool()),
+      ActionMap.HashRing,
+      ActionMap.ActionMapRegistry,
       {DynamicSupervisor, name: ActionMap.Supervisor, strategy: :one_for_one}
       # Starts a worker by calling: ActionMap.Worker.start_link(arg)
       # {ActionMap.Worker, arg}

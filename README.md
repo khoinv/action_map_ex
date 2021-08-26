@@ -6,7 +6,7 @@ Learning the distributed system by implementing action_map server
 + [ ] Store only frequently used data in memory, and the rest on disk
 + [x] Data partition
 + [x] Data replication
-+ [ ] Improve data partition by using consistent hashing
++ [x] Improve data partition by using consistent hashing
 + [ ] Reducing the amount of data be passed across nodes when replication
 + [ ] Consistency
 + [ ] Inconsistency resolution

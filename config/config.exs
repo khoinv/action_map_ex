@@ -17,4 +17,13 @@ import Config
 #       metadata: [:user_id]
 #
 
-config :action_map, replicas: 2, storage_path: "./priv/storage"
+config :action_map,
+  storage_path: "./priv/storage",
+  # each data item is replicated in N -1 nodes(existed in N nodes)
+  replicas_count: 2,
+  hash_ring: %{
+    # each node will map to vnodes_count
+    vnodes_count: 256,
+    # equal-sized partitions count
+    partitions_count: 2000
+  }

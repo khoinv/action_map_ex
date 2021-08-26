@@ -5,72 +5,87 @@ defmodule ActionMapTest do
   @moduletag :capture_log
   doctest ActionMap
 
-  @file_name "test"
+  @file_name "replication"
+
   setup do
-    FileStorage.store(@file_name, %{"like" => "👍"})
-    # ensure store is actually called
-    {:ok, _} = FileStorage.get(@file_name)
+    LocalCluster.start_nodes("test-replication", 5, files: [__ENV__.file])
 
-    {:ok, pid} = ActionMap.server_process(@file_name)
-
-    on_exit(
-      pid,
-      fn ->
-        FileStorage.delete(@file_name)
-        {:error, :enoent} = FileStorage.get(@file_name)
-        # ensure delete is actually called
-        :ok
-      end
-    )
-
-    %{pid: pid}
-  end
-
-  describe "action" do
-    test "returns :error for non_exist_action_key", %{pid: pid} do
-      assert :error = ActionMap.action(pid, "non_exist_action_key")
+    for node <- list_all_nodes() do
+      {_results, []} = :rpc.multicall(ActionMap.HashRing, :add_node, [node], 1000)
     end
 
-    test "returns an action correctly", %{pid: pid} do
-      assert {:ok, "👍"} = ActionMap.action(pid, "like")
-    end
+    on_exit(fn ->
+      :rpc.multicall(list_responsible_nodes(), FileStorage, :delete, [@file_name], 1000)
+      :ok
+    end)
   end
 
-  describe "update_action" do
-    test "updates existed action correctly", %{pid: pid} do
-      ActionMap.add_action(pid, "like2", "🤞")
-      ActionMap.update_action(pid, "like2", "(y)")
-      assert {:ok, "(y)"} = ActionMap.action(pid, "like2")
-    end
-  end
-
-  describe "delete_action" do
-    test "deletes action action correctly", %{pid: pid} do
-      ActionMap.delete_action(pid, "like3")
-      assert :error = ActionMap.action(pid, "like3")
-    end
-  end
-
-  describe "add_action" do
-    test "adds action action correctly", %{pid: pid} do
-      ActionMap.add_action(pid, "fuck", "👎")
-      assert {:ok, "👎"} = ActionMap.action(pid, "fuck")
-    end
-  end
-
-  describe "partition" do
-    test "get the key from other nodes correctly", %{pid: _pid} do
+  describe "replication and partition" do
+    test "the process are replicated only in replicas nodes" do
       {:ok, pid} = ActionMap.server_process(@file_name)
-      [node1] = LocalCluster.start_nodes("test-partition", 1, files: [__ENV__.file])
+      :ok = ActionMap.add_action(pid, "like", "👍")
+
+      assert_nodes_execute_results(
+        list_responsible_nodes(),
+        FileStorage,
+        :get,
+        [@file_name],
+        {:ok, %{"like" => "👍"}}
+      )
+
+      assert_nodes_execute_results(
+        list_all_nodes() -- list_responsible_nodes(),
+        FileStorage,
+        :get,
+        [@file_name],
+        {:error, :enoent}
+      )
+    end
+
+    test "the primary process only existed in a one partition" do
+      {:ok, primary_node} = ActionMap.HashRing.find_node(@file_name)
 
       caller = self()
 
-      Node.spawn(
-        node1,
-        fn -> send(caller, ActionMap.action(pid, "like")) end
-      )
+      for {nodes, local_process_alive?} <- [
+            {[primary_node], true},
+            {list_all_nodes() -- [primary_node], false}
+          ] do
+        for node <- nodes do
+          Node.spawn(node, fn ->
+            {:ok, pid} = ActionMap.server_process(@file_name)
 
-      assert_receive {:ok, "👍"}
+            alive? =
+              try do
+                Process.alive?(pid)
+              rescue
+                ArgumentError -> false
+              end
+
+            send(caller, alive?)
+          end)
+
+          assert_receive(^local_process_alive?)
+        end
+      end
     end
+  end
+
+  defp build_nodes_expect_results(nodes, one_node_result) do
+    nodes |> Enum.map(fn _node -> one_node_result end)
+  end
+
+  def assert_nodes_execute_results(nodes, m, func, args, one_node_result) do
+    nodes_expected_results = build_nodes_expect_results(nodes, one_node_result)
+
+    assert {^nodes_expected_results, []} = :rpc.multicall(nodes, m, func, args, 100)
+  end
+
+  defp list_all_nodes(), do: Node.list([:this, :visible])
+
+  defp list_responsible_nodes() do
+    {:ok, responsible_nodes} = ActionMap.HashRing.find_nodes(@file_name)
+
+    responsible_nodes
   end
 end
